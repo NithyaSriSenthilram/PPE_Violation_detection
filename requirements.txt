@@ -1,0 +1,26 @@
+# ── SentinelVision AI — core runtime dependencies ──────────────────────────
+# Target: Python 3.11+ (tested on 3.11.15, macOS arm64 / Apple Silicon)
+
+# API layer
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+pydantic==2.10.4
+pydantic-settings==2.7.0
+python-multipart==0.0.20
+websockets==14.1
+
+# Persistence (SQLite now, PostgreSQL-ready via SQLAlchemy 2.x)
+SQLAlchemy==2.0.36
+alembic==1.14.0
+
+# Computer vision
+opencv-python-headless==4.10.0.84
+numpy==1.26.4
+Pillow==11.0.0
+
+# Inference backend: ONNX Runtime (CoreML / CPU execution providers)
+onnxruntime==1.20.1
+
+# Utilities
+python-dotenv==1.0.1
+typing-extensions==4.12.2

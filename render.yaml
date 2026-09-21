@@ -1,0 +1,86 @@
+# ── Render Blueprint — SentinelVision AI (PPE detection) ──────────────────
+#
+# Two services:
+#   ppe-detection-api       Docker web service (FastAPI + ONNX Runtime + FFmpeg)
+#                           with a persistent disk for uploads / renders /
+#                           evidence / SQLite.
+#   ppe-detection-frontend  Static site built from frontend/ with Vite.
+#
+# After the first deploy, confirm the two public URLs in the Render dashboard
+# and, if Render had to suffix either subdomain, update CORS_ORIGINS (on the
+# API) and VITE_API_URL (on the frontend, then trigger a rebuild).
+
+services:
+  # ── Backend ─────────────────────────────────────────────────────────────
+  - type: web
+    name: ppe-detection-api
+    runtime: docker
+    region: oregon
+    # Standard (2 GB RAM) is the practical minimum: the three ONNX models plus
+    # OpenCV frame buffers exceed the 512 MB Starter limit. Persistent disks
+    # also require a paid instance type.
+    plan: standard
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /api/health
+    numInstances: 1  # in-process job pool + SQLite: never scale horizontally
+    disk:
+      name: ppe-data
+      mountPath: /var/data
+      sizeGB: 20
+    envVars:
+      - key: PORT
+        value: 10000
+      - key: APP_ENV
+        value: production
+      - key: LOG_LEVEL
+        value: INFO
+      - key: LOG_JSON
+        value: "true"
+      # Everything the server writes goes on the persistent disk.
+      - key: DATA_ROOT
+        value: /var/data
+      # ONNX Runtime is the production inference backend. MAX/Mojo are not in
+      # the image; /api/diagnostics reports what is actually running.
+      - key: INFERENCE_BACKEND
+        value: onnx
+      - key: MOJO_ENABLED
+        value: "off"
+      - key: INFERENCE_THREADS
+        value: "2"
+      - key: AUTO_START_CAMERAS
+        value: "false"
+      - key: MAX_UPLOAD_MB
+        value: "512"
+      # Comma-separated list of allowed browser origins — the static site URL.
+      - key: CORS_ORIGINS
+        value: https://ppe-detection-frontend.onrender.com
+      # Optional shared secret. Leave empty for no auth; if set, the frontend
+      # must be built with the same value in VITE_API_KEY.
+      - key: API_KEY
+        value: ""
+
+  # ── Frontend ────────────────────────────────────────────────────────────
+  - type: web
+    name: ppe-detection-frontend
+    runtime: static
+    rootDir: frontend
+    buildCommand: npm ci && npm run build
+    staticPublishPath: dist
+    envVars:
+      # Public URL of the API service above (build-time; rebuild after change).
+      - key: VITE_API_URL
+        value: https://ppe-detection-api.onrender.com
+      - key: VITE_API_KEY
+        value: ""
+      - key: NODE_VERSION
+        value: "20"
+    routes:
+      # Single-page app: every path is served by index.html.
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    headers:
+      - path: /*
+        name: X-Frame-Options
+        value: SAMEORIGIN

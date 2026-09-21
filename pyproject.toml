@@ -1,0 +1,34 @@
+[project]
+name = "sentinelvision-ai"
+version = "1.0.0"
+description = "AI-powered CCTV surveillance and safety-monitoring platform"
+requires-python = ">=3.11"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-q --strict-markers"
+asyncio_default_fixture_loop_scope = "function"
+filterwarnings = ["ignore::DeprecationWarning:pytest_asyncio.*"]
+
+[tool.ruff]
+line-length = 92
+target-version = "py311"
+exclude = [".venv", ".venv-mojo", "frontend", "models", "evidence", "data"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "C4", "SIM"]
+ignore = [
+  "E501",   # line length is handled by the formatter
+  "B008",   # FastAPI's Depends()/File() in defaults is the documented idiom
+  "SIM108", # an explicit if/else is often clearer than a ternary here
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["E402"]  # conftest must set env vars before importing backend
+
+[tool.mypy]
+python_version = "3.11"
+warn_unused_configs = true
+ignore_missing_imports = true
+exclude = ["frontend", "\\.venv", "tests"]

@@ -1,0 +1,428 @@
+@import './tokens.css';
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: var(--fs-base);
+  font-weight: 400;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-feature-settings: 'cv11', 'ss01';
+  overflow: hidden; /* the shell scrolls its own panes */
+}
+
+/* ── Type roles ──────────────────────────────────────────────────────────
+   Numerals, IDs, timecodes and thresholds are always mono. In a surveillance
+   system almost every value is an identifier or a measurement, so the mono
+   face carries most of the information and tabular figures keep columns from
+   shifting as values tick. */
+.mono,
+.num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+/* Eyebrow: the small uppercase label that names a region or a field. */
+.eyebrow {
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+
+h1,
+h2,
+h3,
+h4 {
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+}
+
+h1 { font-size: var(--fs-xl); }
+h2 { font-size: var(--fs-lg); }
+h3 { font-size: var(--fs-md); }
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+button {
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+/* ── Focus: always visible, hi-vis, never removed ────────────────────────── */
+:focus-visible {
+  outline: 2px solid var(--hivis);
+  outline-offset: 2px;
+  border-radius: var(--r-xs);
+}
+
+/* ── Scrollbars: thin, so dense panes do not lose width to chrome ────────── */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-strong) transparent;
+}
+
+::-webkit-scrollbar {
+  width: 9px;
+  height: 9px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--line-strong);
+  border-radius: 99px;
+  border: 2px solid var(--bg);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-4);
+}
+
+/* ══ Primitives ══════════════════════════════════════════════════════════ */
+
+/* Panel: the base container. Depth comes from a hairline and a 1px inset
+   highlight, not a soft drop shadow — closer to a rack-mounted instrument. */
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  box-shadow: var(--inset-top), var(--shadow-sm);
+}
+
+.panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s3);
+  padding: var(--s3) var(--s4);
+  border-bottom: 1px solid var(--line-soft);
+  min-height: 2.75rem;
+}
+
+.panel-body {
+  padding: var(--s4);
+}
+
+/* Glass: used sparingly — overlays that sit on top of live video only. */
+.glass {
+  background: rgba(13, 15, 20, 0.72);
+  backdrop-filter: blur(14px) saturate(1.2);
+  -webkit-backdrop-filter: blur(14px) saturate(1.2);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+/* ── Buttons ─────────────────────────────────────────────────────────────── */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s2);
+  padding: 0.4rem 0.75rem;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+  color: var(--text-2);
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  white-space: nowrap;
+  transition: background var(--t-fast) var(--ease),
+    border-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
+}
+
+.btn:hover:not(:disabled) {
+  background: var(--surface-3);
+  border-color: var(--text-4);
+  color: var(--text);
+}
+
+.btn-primary {
+  background: var(--hivis);
+  border-color: var(--hivis);
+  color: #10140a;
+  font-weight: 700;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: #d4f43c;
+  border-color: #d4f43c;
+  color: #10140a;
+}
+
+.btn-ghost {
+  background: transparent;
+  border-color: transparent;
+  color: var(--text-3);
+}
+
+.btn-ghost:hover:not(:disabled) {
+  background: var(--surface-2);
+  color: var(--text);
+  border-color: transparent;
+}
+
+.btn-danger:hover:not(:disabled) {
+  border-color: var(--error);
+  color: var(--error);
+  background: var(--sev-critical-wash);
+}
+
+.btn-sm {
+  padding: 0.25rem 0.5rem;
+  font-size: var(--fs-tiny);
+}
+
+/* ── Chips ───────────────────────────────────────────────────────────────── */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.1rem 0.4rem;
+  border-radius: var(--r-xs);
+  border: 1px solid var(--line-strong);
+  background: var(--surface-2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-2);
+  white-space: nowrap;
+}
+
+/* ── Inputs ──────────────────────────────────────────────────────────────── */
+.input,
+.select {
+  width: 100%;
+  padding: 0.4rem 0.6rem;
+  background: var(--bg-elev);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-sm);
+  color: var(--text);
+  font-size: var(--fs-sm);
+  transition: border-color var(--t-fast) var(--ease);
+}
+
+.input:focus,
+.select:focus {
+  outline: none;
+  border-color: var(--hivis);
+}
+
+.input::placeholder {
+  color: var(--text-4);
+}
+
+.select {
+  appearance: none;
+  padding-right: 1.75rem;
+  background-image: linear-gradient(45deg, transparent 50%, var(--text-3) 50%),
+    linear-gradient(135deg, var(--text-3) 50%, transparent 50%);
+  background-position: calc(100% - 14px) 51%, calc(100% - 9px) 51%;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+  cursor: pointer;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s1);
+}
+
+/* ── Tally light: the one place a glow is justified. A recording indicator
+      reads as lit in peripheral vision, which is exactly its job. ────────── */
+.tally {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--offline);
+}
+
+.tally-live {
+  background: var(--live);
+  box-shadow: 0 0 0 2px rgba(52, 217, 123, 0.16);
+  animation: tally-pulse 2.4s var(--ease) infinite;
+}
+
+.tally-error {
+  background: var(--error);
+  box-shadow: 0 0 0 2px rgba(255, 77, 77, 0.16);
+}
+
+@keyframes tally-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+
+/* ── Utilities ───────────────────────────────────────────────────────────── */
+.row { display: flex; align-items: center; gap: var(--s2); }
+.row-between { display: flex; align-items: center; justify-content: space-between; gap: var(--s3); }
+.col { display: flex; flex-direction: column; }
+.grow { flex: 1; min-width: 0; }
+.truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dim { color: var(--text-3); }
+.dim-2 { color: var(--text-4); }
+.hidden { display: none !important; }
+
+.scroll-y {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.skeleton {
+  background: linear-gradient(90deg, var(--surface-2) 25%, var(--surface-3) 50%, var(--surface-2) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s linear infinite;
+  border-radius: var(--r-sm);
+}
+
+@keyframes shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+.fade-in {
+  animation: fade-in var(--t-base) var(--ease);
+}
+
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(3px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* ── Reduced motion: honour it completely ────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Tile controls stay hidden until the operator reaches for them, so nothing
+   sits over live footage during normal watching. Keyboard focus reveals them
+   too — they must not be reachable-but-invisible. */
+article:hover .tile-controls,
+article:focus-within .tile-controls,
+article:hover .tile-hud,
+article:focus-within .tile-hud {
+  opacity: 1 !important;
+}
+
+/* Incident detail collapses to a single column before the evidence image gets
+   too small to judge. */
+@media (max-width: 860px) {
+  .incident-grid {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+}
+
+.alert-row:hover {
+  background: var(--surface-2) !important;
+  border-color: var(--line-strong) !important;
+}
+
+/* The alert row must adapt to the width of the *panel* it sits in, not the
+   window: on the overview page a 700px panel inside a 1600px window is
+   exactly the case a viewport media query gets wrong, and the description
+   ends up truncated to "Restric...". Container queries measure the right box.
+   Columns are dropped least-important-first as space runs out. */
+.alert-list {
+  container-type: inline-size;
+  container-name: alertlist;
+}
+
+@container alertlist (max-width: 760px) {
+  .alert-cell-camera {
+    display: none;
+  }
+}
+
+@container alertlist (max-width: 640px) {
+  .alert-cell-conf {
+    display: none;
+  }
+}
+
+@container alertlist (max-width: 520px) {
+  .alert-cell-person,
+  .alert-thumb {
+    display: none;
+  }
+}
+
+/* Fallback for engines without container queries: keep the viewport rule so
+   narrow windows still degrade sensibly. */
+@supports not (container-type: inline-size) {
+  @media (max-width: 1080px) {
+    .alert-cell-camera,
+    .alert-cell-conf {
+      display: none;
+    }
+  }
+}
+
+@media (max-width: 1180px) {
+  .dash-split {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+}
+
+@media (max-width: 980px) {
+  .analysis-grid {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+}
+
+@media (max-width: 920px) {
+  .zone-grid {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+}

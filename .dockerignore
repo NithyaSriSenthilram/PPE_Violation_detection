@@ -1,0 +1,47 @@
+# Everything the backend image does not need. Keeps the build context small
+# and guarantees no local secrets or runtime data end up in the image.
+.git
+.gitignore
+.env
+.env.*
+!.env.example
+.venv
+.venv-mojo
+.mypy_cache
+.pytest_cache
+.ruff_cache
+.playwright-mcp
+.remember
+.DS_Store
+**/.DS_Store
+**/__pycache__
+*.py[cod]
+:memory:
+
+# Frontend is built separately (Render Static Site)
+frontend
+
+# Runtime data — lives on the persistent disk, never in the image
+data
+processed
+evidence
+*.db
+*.db-shm
+*.db-wal
+
+# Tests and local docs
+tests
+docs
+*.png
+README.md
+Makefile
+
+# Models: keep the small ONNX files + labels + prompt bank; drop PyTorch
+# checkpoints (export-time only) and the validator (downloaded at build).
+models/*.pt
+models/.hardhat-build
+models/hardhat_validator.onnx
+
+# Mojo build output
+backend/inference/mojo/build
+backend/inference/mojo/__mojocache__

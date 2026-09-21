@@ -1,0 +1,12 @@
+# ── Optional accelerators / extra backends ────────────────────────────────
+# None of these are required. The system detects them at runtime and falls
+# back cleanly (see `GET /api/diagnostics`).
+
+# Ultralytics backend (PyTorch + MPS on Apple Silicon). Also used one-off by
+# scripts/fetch_models.py to export YOLO weights to ONNX.
+#   pip install -r requirements-optional.txt
+ultralytics==8.3.58
+
+# Modular MAX inference engine + Mojo toolchain.
+# Availability is platform dependent — see README "MAX setup".
+#   pip install modular

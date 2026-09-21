@@ -1,0 +1,71 @@
+# ── Python ────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.venv-mojo/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+
+# ── Node ──────────────────────────────────────────────────────────────────
+node_modules/
+frontend/dist/
+frontend/.vite/
+frontend/*.tsbuildinfo
+
+# ── Environment (never commit secrets) ────────────────────────────────────
+.env
+.env.local
+.env.*.local
+.env.production
+.env.development
+frontend/.env
+frontend/.env.*
+!.env.example
+!frontend/.env.example
+
+# ── Runtime data (lives on the persistent disk in production) ─────────────
+data/
+processed/
+evidence/snapshots/*
+evidence/clips/*
+!evidence/snapshots/.gitkeep
+!evidence/clips/.gitkeep
+*.db
+*.db-shm
+*.db-wal
+*.db-journal
+:memory:
+
+# ── Models ────────────────────────────────────────────────────────────────
+# The two small ONNX detectors, their labels and the hard-hat prompt bank are
+# committed so a clone deploys. PyTorch checkpoints are export-time only, and
+# the 351 MB hard-hat validator is fetched at build time (Dockerfile) or with
+# scripts/fetch_models.py --hardhat.
+models/*
+!models/.gitkeep
+!models/*.names
+!models/*.names.reference
+!models/yolov8n.onnx
+!models/ppe.onnx
+!models/hardhat_prompts.npz
+
+# ── Mojo build output ─────────────────────────────────────────────────────
+backend/inference/mojo/build/
+backend/inference/mojo/__mojocache__/
+
+# ── Test artefacts ────────────────────────────────────────────────────────
+tests/_artifacts/
+tests/fixtures/*.mp4
+tests/fixtures/*.jpg
+
+# ── OS / tooling ──────────────────────────────────────────────────────────
+.DS_Store
+.playwright-mcp/
+.remember/
+.claude/
+*.log
+
+# Local screenshots at the repo root
+/*.png

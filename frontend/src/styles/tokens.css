@@ -1,0 +1,136 @@
+/* ══════════════════════════════════════════════════════════════════════════
+   SentinelVision AI — design tokens
+
+   Direction: video-engineering instrumentation, not "AI dashboard".
+   Surfaces are reference black (the cool near-black of a broadcast monitor,
+   never pure #000, which crushes detail). The accent is hi-visibility
+   yellow-green — the actual colour of the safety vests this system detects,
+   so the brand mark and the "compliant" state are literally the same hue.
+
+   Severity deliberately does NOT reuse the accent: an operator must never
+   confuse product chrome with a hazard state. The ramp is taken from safety
+   signage — information blue, caution amber, warning orange, signal red.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+:root {
+  /* ── Surfaces ─────────────────────────────────────────────────────────── */
+  --bg: #08090c;
+  --bg-elev: #0d0f14;
+  --surface: #12151c;
+  --surface-2: #171b24;
+  --surface-3: #1e232e;
+  --line: #232935;
+  --line-soft: #1a1f28;
+  --line-strong: #313847;
+
+  /* ── Ink ──────────────────────────────────────────────────────────────── */
+  --text: #e9ecf3;
+  --text-2: #a2abbd;
+  --text-3: #6b7488;
+  --text-4: #4a5162;
+
+  /* ── Accent: hi-vis vest yellow-green ─────────────────────────────────── */
+  --hivis: #c7e82f;
+  --hivis-dim: #9bb524;
+  --hivis-wash: rgba(199, 232, 47, 0.1);
+  --hivis-line: rgba(199, 232, 47, 0.3);
+
+  /* ── Severity ramp (safety signage) ───────────────────────────────────── */
+  --sev-low: #5b9cf5;
+  --sev-medium: #ffc53d;
+  --sev-high: #ff8a3d;
+  --sev-critical: #ff4d4d;
+  --sev-low-wash: rgba(91, 156, 245, 0.12);
+  --sev-medium-wash: rgba(255, 197, 61, 0.12);
+  --sev-high-wash: rgba(255, 138, 61, 0.12);
+  --sev-critical-wash: rgba(255, 77, 77, 0.14);
+
+  /* ── Semantic ─────────────────────────────────────────────────────────── */
+  --live: #34d97b;
+  --offline: #545c6e;
+  --error: #ff4d4d;
+  --advisory: #b48cf5;
+
+
+  /* ── Chart series ─────────────────────────────────────────────────────────
+     Nominal families. Only THREE categorical slots survive all-pairs CVD
+     validation against this dark surface (checked with the dataviz validator,
+     not judged by eye) — a fourth slot collapses to ΔE 1.6 under deuteranopia.
+     That is why events are charted as three operational families rather than
+     as eight separate types; the per-type breakdown uses one hue plus direct
+     labels instead. */
+  --series-1: #3987e5;  /* PPE compliance   */
+  --series-2: #d95926;  /* Perimeter        */
+  --series-3: #199e70;  /* Behavioural      */
+
+  /* Severity as a chart FILL is a different job from severity as a badge.
+     The bright ramp above is a status palette: every instance carries its text
+     label and the gate-bar height, so hue is never load-bearing alone. As
+     adjacent chart fills, though, those four hues measure ΔE 0.3 under
+     deuteranopia — effectively one colour. Chart marks therefore use a
+     single-hue ordinal ramp with monotone lightness, so the escalation is
+     legible without relying on hue at all. The steps are spread wider than the
+     minimum the validator accepts, because at swatch and thin-bar sizes the
+     tightest passing spread still blurs two adjacent segments together. */
+  --sev-fill-low: #7a3a18;
+  --sev-fill-medium: #a85a26;
+  --sev-fill-high: #cd8047;
+  --sev-fill-critical: #eaab7e;
+
+  /* Recessive chart furniture. */
+  --grid: #1c2129;
+  --axis: #2b323d;
+
+  /* ── Type ─────────────────────────────────────────────────────────────── */
+  --font-ui: 'Chivo', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+
+  /* Data-dense console: the scale is tight on purpose. */
+  --fs-micro: 0.625rem;   /* 10px — eyebrow labels, axis ticks */
+  --fs-tiny: 0.6875rem;   /* 11px — meta, chips */
+  --fs-sm: 0.75rem;       /* 12px — table text, secondary */
+  --fs-base: 0.8125rem;   /* 13px — body */
+  --fs-md: 0.9375rem;     /* 15px — emphasis */
+  --fs-lg: 1.125rem;      /* 18px — section titles */
+  --fs-xl: 1.5rem;        /* 24px — page titles */
+  --fs-2xl: 2rem;         /* 32px — KPI values */
+  --fs-3xl: 2.75rem;      /* 44px — hero metric */
+
+  /* ── Space (4px base) ─────────────────────────────────────────────────── */
+  --s1: 0.25rem;
+  --s2: 0.5rem;
+  --s3: 0.75rem;
+  --s4: 1rem;
+  --s5: 1.25rem;
+  --s6: 1.5rem;
+  --s8: 2rem;
+  --s10: 2.5rem;
+  --s12: 3rem;
+
+  /* ── Radius: small. Instruments have tight corners. ───────────────────── */
+  --r-xs: 2px;
+  --r-sm: 3px;
+  --r-md: 5px;
+  --r-lg: 8px;
+
+  /* ── Elevation: depth from hairlines + inset light, not big soft shadows ─ */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.5);
+  --shadow-md: 0 4px 14px rgba(0, 0, 0, 0.45);
+  --shadow-lg: 0 18px 48px rgba(0, 0, 0, 0.6);
+  --inset-top: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+
+  /* ── Layout ───────────────────────────────────────────────────────────── */
+  --rail-w: 13.5rem;
+  --rail-w-collapsed: 3.75rem;
+  --topbar-h: 3.25rem;
+
+  /* ── Motion: quick and mechanical. Nothing bounces in a control room. ─── */
+  --ease: cubic-bezier(0.32, 0.72, 0, 1);
+  --t-fast: 120ms;
+  --t-base: 200ms;
+  --t-slow: 340ms;
+}
+
+/* The console is dark by design — a lit-up white panel in a dim control room
+   is a real ergonomic problem, not a style preference. A light theme is
+   deliberately not offered. */
