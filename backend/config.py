@@ -76,6 +76,17 @@ class Settings(BaseSettings):
     inference_width: int = Field(640, ge=64, le=2048)
     inference_height: int = Field(640, ge=64, le=2048)
     inference_threads: int = Field(4, ge=1, le=64)
+    #: ONNX Runtime's CPU memory arena caches every allocation a session ever
+    #: made and never returns it, so steady-state RSS grows to the sum of the
+    #: three models' worst-case scratch space (~120 MB measured, plus ~70 MB of
+    #: memory-pattern pre-reservation). Switch it off on memory-capped hosts
+    #: (Render Free, 512 MB): each run then mallocs and frees, which costs a
+    #: few percent of throughput and nothing else.
+    onnx_cpu_mem_arena: bool = True
+    #: Simultaneous upload-analysis jobs. Each one holds a decoder and roughly
+    #: 170 MB of transient frame and inference buffers, so on a 512 MB host
+    #: this must be 1; a second job queues behind the first instead.
+    max_concurrent_jobs: int = Field(2, ge=1, le=16)
 
     # ── PPE ──────────────────────────────────────────────────────────────
     #: PPE detection runs its own threshold: the PPE model is a different
@@ -217,6 +228,11 @@ class Settings(BaseSettings):
     annotated_ffmpeg_finalise: bool = True
     #: CRF for the ffmpeg pass. Lower is better quality and a larger file.
     annotated_crf: int = Field(23, ge=0, le=51)
+    #: Encoder threads for the ffmpeg pass; 0 lets ffmpeg pick one per core.
+    #: libx264 holds a frame pipeline per thread, so its peak memory scales
+    #: with this: measured at 1080p, 407 MB auto on 8 cores against 233 MB
+    #: with one thread. Set to 1 on memory-capped hosts (Render Free).
+    annotated_ffmpeg_threads: int = Field(0, ge=0, le=64)
 
     # ── Overlay rendering ────────────────────────────────────────────────
     #: Draw the whole-person rectangle. Off by default: a body-sized box says

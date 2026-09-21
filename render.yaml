@@ -1,14 +1,25 @@
-# ── Render Blueprint — SentinelVision AI (PPE detection) ──────────────────
+# ── Render Blueprint — SentinelVision AI (PPE detection), Free tier ───────
 #
-# Two services:
+# Two free services:
 #   ppe-detection-api       Docker web service (FastAPI + ONNX Runtime + FFmpeg)
-#                           with a persistent disk for uploads / renders /
-#                           evidence / SQLite.
 #   ppe-detection-frontend  Static site built from frontend/ with Vite.
 #
-# After the first deploy, confirm the two public URLs in the Render dashboard
-# and, if Render had to suffix either subdomain, update CORS_ORIGINS (on the
-# API) and VITE_API_URL (on the frontend, then trigger a rebuild).
+# Render Free means 512 MB RAM, a shared CPU, no persistent disk, and the
+# service sleeps after 15 minutes without traffic (first request afterwards
+# takes ~1 min while the models load). The image is sized for it: the
+# hard-hat validator is the q4f16 build (see Dockerfile) and the whole stack
+# measures ~270 MB with models loaded, ~400 MB peak during a 720p analysis
+# and ~465 MB at 1080p — one job at a time (MAX_CONCURRENT_JOBS=1).
+#
+# Storage is ephemeral: uploads, annotated renders, evidence and the SQLite
+# database live in the container and are wiped on every deploy, restart or
+# sleep/wake cycle. Results must be downloaded while the service is up. Mount
+# a disk at /var/data on a paid plan and nothing else needs to change.
+#
+# URLs are not hard-coded. Render prompts for the two `sync: false` values
+# when the Blueprint is created; fill them in with the public URLs shown on
+# each service (the frontend's for CORS_ORIGINS, the API's for VITE_API_URL).
+# Changing VITE_API_URL later requires a frontend rebuild — it is baked in.
 
 services:
   # ── Backend ─────────────────────────────────────────────────────────────
@@ -16,18 +27,11 @@ services:
     name: ppe-detection-api
     runtime: docker
     region: oregon
-    # Standard (2 GB RAM) is the practical minimum: the three ONNX models plus
-    # OpenCV frame buffers exceed the 512 MB Starter limit. Persistent disks
-    # also require a paid instance type.
-    plan: standard
+    plan: free
     dockerfilePath: ./Dockerfile
     dockerContext: .
     healthCheckPath: /api/health
     numInstances: 1  # in-process job pool + SQLite: never scale horizontally
-    disk:
-      name: ppe-data
-      mountPath: /var/data
-      sizeGB: 20
     envVars:
       - key: PORT
         value: 10000
@@ -37,7 +41,7 @@ services:
         value: INFO
       - key: LOG_JSON
         value: "true"
-      # Everything the server writes goes on the persistent disk.
+      # Ephemeral container storage on the free plan (no disk to mount).
       - key: DATA_ROOT
         value: /var/data
       # ONNX Runtime is the production inference backend. MAX/Mojo are not in
@@ -46,15 +50,33 @@ services:
         value: onnx
       - key: MOJO_ENABLED
         value: "off"
+      # Free tier: one shared CPU and 512 MB. One intra-op thread, and no ORT
+      # memory arena so scratch buffers are returned between runs.
       - key: INFERENCE_THREADS
-        value: "2"
+        value: "1"
+      - key: ONNX_CPU_MEM_ARENA
+        value: "false"
       - key: AUTO_START_CAMERAS
         value: "false"
+      # The ffmpeg finalise pass runs beside the Python process and counts
+      # against the same 512 MB. One encoder thread and a 1280 px render cap
+      # keep it under ~120 MB (auto threads at 1080p measured 407 MB).
+      - key: ANNOTATED_FFMPEG_THREADS
+        value: "1"
+      # One analysis at a time: a second concurrent job would double the
+      # transient buffers and exceed the instance. Further uploads queue.
+      - key: MAX_CONCURRENT_JOBS
+        value: "1"
+      - key: ANNOTATED_MAX_WIDTH
+        value: "1280"
+      # Large uploads are slow to analyse on a shared CPU and the container
+      # has no disk to spare; raise this on a paid instance.
       - key: MAX_UPLOAD_MB
-        value: "512"
-      # Comma-separated list of allowed browser origins — the static site URL.
+        value: "200"
+      # Allowed browser origins: the static site's public URL, e.g.
+      # https://<frontend-service>.onrender.com (comma-separated for several).
       - key: CORS_ORIGINS
-        value: https://ppe-detection-frontend.onrender.com
+        sync: false
       # Optional shared secret. Leave empty for no auth; if set, the frontend
       # must be built with the same value in VITE_API_KEY.
       - key: API_KEY
@@ -68,9 +90,10 @@ services:
     buildCommand: npm ci && npm run build
     staticPublishPath: dist
     envVars:
-      # Public URL of the API service above (build-time; rebuild after change).
+      # Public URL of the API service, e.g. https://<api-service>.onrender.com
+      # (build-time; rebuild after changing it).
       - key: VITE_API_URL
-        value: https://ppe-detection-api.onrender.com
+        sync: false
       - key: VITE_API_KEY
         value: ""
       - key: NODE_VERSION

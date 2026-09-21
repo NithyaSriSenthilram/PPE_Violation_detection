@@ -251,14 +251,19 @@ Setting `APP_ENV=production` stops exception detail from reaching clients.
 
 | Service | Type | Settings |
 |---|---|---|
-| `ppe-detection-api` | Docker web service | `Dockerfile` at repo root, health check `/api/health`, persistent disk at `/var/data`, plan **Standard** (2 GB RAM — the three ONNX models do not fit in 512 MB) |
+| `ppe-detection-api` | Docker web service | `Dockerfile` at repo root, health check `/api/health`, plan **Free** (512 MB RAM, no persistent disk, sleeps after 15 min idle) |
 | `ppe-detection-frontend` | Static site | root `frontend`, build `npm ci && npm run build`, publish `dist`, SPA rewrite `/* → /index.html` |
 
 The image installs FFmpeg, OpenCV and ONNX Runtime, copies the committed
 detector models (`yolov8n.onnx`, `ppe.onnx`, `hardhat_prompts.npz`) and
-downloads the 351 MB hard-hat validator from its public Hugging Face source
-at build time. MAX/Mojo are not in the image; `/api/diagnostics` reports
-ONNX Runtime as the active backend.
+downloads the hard-hat validator from its public Hugging Face source at build
+time. The image defaults to the **q4f16** build of the validator (53 MB, same
+measured accuracy as fp32): the fp32 build alone costs ~585 MB of RSS once
+ONNX Runtime has optimised it, which is more than the whole free instance.
+With q4f16, `INFERENCE_THREADS=1` and `ONNX_CPU_MEM_ARENA=false` the full
+stack measures ~270 MB with models loaded, ~400 MB peak during a 720p
+analysis and ~465 MB at 1080p, one job at a time. MAX/Mojo are not in the
+image; `/api/diagnostics` reports ONNX Runtime as the active backend.
 
 Backend environment (set in `render.yaml`):
 
@@ -268,8 +273,14 @@ APP_ENV=production
 DATA_ROOT=/var/data        # uploads/, processed/, evidence/, db/surveillance.db
 INFERENCE_BACKEND=onnx
 MOJO_ENABLED=off
+INFERENCE_THREADS=1        # free tier: one shared CPU
+ONNX_CPU_MEM_ARENA=false   # return scratch buffers between runs (512 MB cap)
+ANNOTATED_FFMPEG_THREADS=1 # ffmpeg finalise shares the 512 MB; 1 thread halves its peak
+ANNOTATED_MAX_WIDTH=1280   # render cap; 1080p renders push ffmpeg past the limit
+MAX_CONCURRENT_JOBS=1      # one analysis at a time; further uploads queue
 AUTO_START_CAMERAS=false
-CORS_ORIGINS=https://<your-frontend>.onrender.com
+MAX_UPLOAD_MB=200
+CORS_ORIGINS=              # prompted at Blueprint creation: the static site URL
 API_KEY=                   # optional shared secret
 ```
 
@@ -277,15 +288,18 @@ Frontend environment (build-time): `VITE_API_URL=https://<your-api>.onrender.com
 Empty `VITE_API_URL` means same-origin, which is what the Vite dev proxy and
 a reverse-proxy deployment use.
 
-Everything the server writes lives under `DATA_ROOT`, so uploads, renders,
-evidence and the SQLite database survive restarts and redeploys. Analysis
-jobs that were mid-flight when a process died are marked `FAILED` at the next
-startup ("Interrupted by a server restart") rather than staying `RUNNING`.
+Everything the server writes lives under `DATA_ROOT`. On the free plan that
+is ephemeral container storage: uploads, renders, evidence and the SQLite
+database are wiped on every deploy, restart and sleep/wake cycle, so download
+results while the service is up. Mounting a persistent disk at `/var/data`
+(paid plans) makes them durable with no other change. Analysis jobs that were
+mid-flight when a process died are marked `FAILED` at the next startup
+("Interrupted by a server restart") rather than staying `RUNNING`.
 
 Steps: push to GitHub → Render Dashboard → *New → Blueprint* → select the
-repo → apply. After the first deploy, check the two public URLs: if Render
-suffixed either subdomain, update `CORS_ORIGINS` on the API and
-`VITE_API_URL` on the static site (then redeploy the site).
+repo → Render prompts for `CORS_ORIGINS` and `VITE_API_URL` (both are
+`sync: false`, never hard-coded) → enter the two services' public URLs →
+apply. Changing `VITE_API_URL` later needs a frontend rebuild.
 
 ---
 

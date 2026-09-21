@@ -348,6 +348,10 @@ class ClipHardHatValidator(HardHatValidator):
 
         options = ort.SessionOptions()
         options.intra_op_num_threads = settings.inference_threads
+        options.enable_cpu_mem_arena = settings.onnx_cpu_mem_arena
+        # Memory-pattern planning pre-reserves the arena's worst case; without
+        # an arena it only costs memory (~70 MB measured across the three models).
+        options.enable_mem_pattern = settings.onnx_cpu_mem_arena
         options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
         options.log_severity_level = 3
 

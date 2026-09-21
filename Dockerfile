@@ -9,13 +9,18 @@
 # installed, and /api/diagnostics will report exactly that.
 #
 # Runtime data (uploads, processed renders, evidence, SQLite) lives under
-# DATA_ROOT, which on Render is the persistent disk mounted at /var/data.
+# DATA_ROOT. On Render Free there is no persistent disk, so /var/data is
+# ephemeral container storage: it is wiped on every deploy and restart. Mount
+# a disk there on a paid plan and nothing else needs to change.
 
 FROM python:3.11-slim-bookworm
 
 ARG DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
+    # glibc grows one malloc arena per thread; the job pool, ORT and uvicorn
+    # together can hold tens of MB of fragmented free space. Two is plenty.
+    MALLOC_ARENA_MAX=2 \
     PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1
 
@@ -44,12 +49,18 @@ COPY scripts/ ./scripts/
 COPY models/ ./models/
 COPY pyproject.toml ./
 
-# The hard-hat validator (CLIP ViT-B/32 image encoder, 351 MB fp32) is too
-# large for the git repository, so it is fetched from its public source at
-# build time. Same file `scripts/fetch_models.py --hardhat` downloads locally.
-#   fp32  — reference calibration, fastest on CPU (default)
-#   q4f16 — 53 MB, same measured accuracy, ~2x slower per crop
-ARG HARDHAT_VARIANT=fp32
+# The hard-hat validator (CLIP ViT-B/32 image encoder) is too large for the
+# git repository, so it is fetched from its public source at build time. Same
+# file `scripts/fetch_models.py --hardhat` downloads locally.
+#   fp32  — 351 MB; reference calibration, fastest on CPU. Measured at ~585 MB
+#           of RSS once ONNX Runtime has optimised it: on its own it exceeds
+#           Render Free's 512 MB, so it is not the image default.
+#   q4f16 — 53 MB, same measured accuracy, ~2x slower per crop; ~80 MB RSS.
+#           Default. Whole stack (both YOLO detectors + validator + FastAPI +
+#           OpenCV) measures ~270 MB with models loaded, ~400 MB peak during
+#           a 720p analysis and ~465 MB at 1080p (CPU-only, arena off).
+# Override with `--build-arg HARDHAT_VARIANT=fp32` on a host with the RAM.
+ARG HARDHAT_VARIANT=q4f16
 ARG HARDHAT_REPO=Xenova/clip-vit-base-patch32
 RUN set -eu; \
     case "$HARDHAT_VARIANT" in \
@@ -75,10 +86,15 @@ ENV APP_ENV=production \
     INFERENCE_BACKEND=onnx \
     MOJO_ENABLED=off \
     AUTO_START_CAMERAS=false \
+    INFERENCE_THREADS=1 \
+    ONNX_CPU_MEM_ARENA=false \
+    ANNOTATED_FFMPEG_THREADS=1 \
+    MAX_CONCURRENT_JOBS=1 \
+    ANNOTATED_MAX_WIDTH=1280 \
     DATA_ROOT=/var/data
 
+# Ephemeral by default (no VOLUME): Render Free has no persistent disks.
 RUN mkdir -p /var/data
-VOLUME ["/var/data"]
 
 EXPOSE 8008
 

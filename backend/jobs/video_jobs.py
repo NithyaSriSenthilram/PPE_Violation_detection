@@ -19,8 +19,9 @@ a worker and time out behind a proxy. The upload endpoint returns a `job_id`
 immediately; progress is polled from `/api/videos/jobs/{id}` and pushed over
 the WebSocket.
 
-Concurrency is capped (`MAX_CONCURRENT_JOBS`) because each job holds a decoder
-and competes with the live cameras for the same inference session.
+Concurrency is capped (`MAX_CONCURRENT_JOBS`, default 2) because each job
+holds a decoder and competes with the live cameras for the same inference
+session.
 """
 
 from __future__ import annotations
@@ -53,10 +54,6 @@ from backend.video.annotate import ActiveEvent, annotate_frame
 from backend.video.writer import AnnotatedVideoWriter, VideoWriteError
 
 logger = get_logger(__name__)
-
-#: Simultaneous analysis jobs. Kept low: each one competes with the live
-#: cameras for the same inference session and CPU.
-MAX_CONCURRENT_JOBS = 2
 
 #: Progress is pushed at most this often, to avoid flooding the WebSocket.
 PROGRESS_INTERVAL = 0.75
@@ -124,7 +121,9 @@ class JobStatus:
 class VideoJobRunner:
     """Owns the worker pool and the cancellation flags."""
 
-    def __init__(self, max_workers: int = MAX_CONCURRENT_JOBS) -> None:
+    def __init__(self, max_workers: int | None = None) -> None:
+        if max_workers is None:
+            max_workers = settings.max_concurrent_jobs
         self._pool = ThreadPoolExecutor(
             max_workers=max_workers, thread_name_prefix="videojob"
         )

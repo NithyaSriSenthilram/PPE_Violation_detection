@@ -358,6 +358,8 @@ class AnnotatedVideoWriter:
                 # defaults to 4:4:4 from some inputs, which Safari will not play.
                 "-pix_fmt", "yuv420p",
             ]
+            if settings.annotated_ffmpeg_threads > 0:
+                command += ["-threads", str(settings.annotated_ffmpeg_threads)]
         command += ["-movflags", "+faststart", "-shortest", str(output)]
 
         try:
