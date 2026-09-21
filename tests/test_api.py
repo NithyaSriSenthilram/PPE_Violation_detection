@@ -31,6 +31,41 @@ class TestSystem:
         assert body["status"] in {"ok", "degraded"}
         assert body["app"] and body["version"]
         assert isinstance(body["database"], bool)
+        for field in ("inference_backend", "cameras_online", "cameras_total", "model_loaded"):
+            assert field in body
+
+    def test_health_does_not_touch_the_database(self, client):
+        """The probe must answer while the database is busy or broken.
+
+        It is polled during analysis jobs on a starved CPU; a probe that waits
+        on SQLite gets the whole process restarted. So it must not even open a
+        session: with the session dependency made to fail, it still answers.
+        """
+        from backend.api.deps import get_session
+
+        class _Poison:
+            def __getattr__(self, name):
+                raise RuntimeError(f"database must not be used by /api/health ({name})")
+
+        def _poisoned():
+            yield _Poison()
+
+        client.app.dependency_overrides[get_session] = _poisoned
+        try:
+            response = client.get("/api/health")
+        finally:
+            client.app.dependency_overrides.clear()
+        assert response.status_code == 200
+        assert response.json()["status"] in {"ok", "degraded"}
+
+    def test_health_is_fast(self, client):
+        import time
+
+        client.get("/api/health")  # warm
+        started = time.perf_counter()
+        for _ in range(20):
+            assert client.get("/api/health").status_code == 200
+        assert (time.perf_counter() - started) / 20 < 0.05
 
     def test_diagnostics_reports_every_backend_truthfully(self, client):
         """Spec §24: the real active backend, and why the others are not."""

@@ -26,6 +26,8 @@ session.
 
 from __future__ import annotations
 
+import os
+import sys
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -110,6 +112,61 @@ def _stored_path(path: Path) -> str:
         return str(path.resolve())
 
 
+#: Nice value for the analysis thread. Positive is *lower* priority: the
+#: server's event loop and the health probe get the CPU first whenever they
+#: want it, and the job takes what is left — which on a throttled host is
+#: nearly all of it anyway, because they want it rarely.
+WORKER_NICE = 10
+
+
+def _lower_thread_priority() -> None:
+    """Deprioritise the calling thread so the web server stays responsive.
+
+    On a fractional-CPU host the analysis loop can otherwise starve Uvicorn
+    long enough for the platform's health check to fail and restart the
+    process. Linux schedules threads as tasks, so ``setpriority`` on the
+    native thread id affects this thread only; elsewhere (macOS, Windows) the
+    call would apply to the whole process or not exist, so it is skipped.
+    Best effort: a refusal is logged, never raised.
+    """
+    if not sys.platform.startswith("linux") or not hasattr(os, "setpriority"):
+        return
+    try:
+        os.setpriority(os.PRIO_PROCESS, threading.get_native_id(), WORKER_NICE)
+    except (OSError, AttributeError) as exc:
+        logger.debug("Could not lower analysis thread priority: %s", exc)
+
+
+def _process_rss_mb() -> float | None:
+    """Resident set size of this process in MB, or None where unknown.
+
+    Read from ``/proc/self/statm`` — no dependency, and cheap enough to call
+    every progress tick. Only Linux has it, which is where the memory-capped
+    hosts are.
+    """
+    try:
+        with open("/proc/self/statm", encoding="ascii") as handle:
+            resident_pages = int(handle.read().split()[1])
+    except (OSError, ValueError, IndexError):
+        return None
+    return resident_pages * os.sysconf("SC_PAGE_SIZE") / (1024 * 1024)
+
+
+def working_size(width: int, height: int, max_width: int) -> tuple[int, int]:
+    """Resolution the whole pipeline runs at for a source of `width`x`height`.
+
+    Sources wider than `max_width` are scaled down proportionally, once, right
+    after decode — so detection, tracking, PPE, annotation and the render all
+    work on the smaller frame and a 4K upload costs the same memory as a
+    1280-wide one. Both dimensions are made even, which is what H.264 chroma
+    subsampling requires and what the writer would otherwise do itself.
+    """
+    if width <= max_width:
+        return width - (width % 2), height - (height % 2)
+    scale = max_width / width
+    return max_width - (max_width % 2), max(2, int(round(height * scale)) & ~1)
+
+
 class JobStatus:
     QUEUED = "QUEUED"
     RUNNING = "RUNNING"
@@ -187,6 +244,7 @@ class VideoJobRunner:
 
     # ── the work ─────────────────────────────────────────────────────────
     def _run(self, job_id: str, profile: str) -> None:
+        _lower_thread_priority()
         try:
             self._analyse(job_id, profile)
         except Exception as exc:
@@ -260,12 +318,30 @@ class VideoJobRunner:
             # A render that cannot be produced is a failed analysis, not a
             # quiet downgrade: the annotated video is what the operator came
             # for, and reporting "complete" without one would be a lie.
+            # Everything downstream of the decoder — detection, tracking,
+            # PPE, annotation, evidence and the render — runs at this size.
+            # Scaling once here, rather than in the writer at the end, is
+            # what keeps a 1080p or 4K upload inside a 512 MB host: every
+            # full-frame copy the overlay pass makes is of the small frame.
+            work_width, work_height = working_size(
+                width, height, settings.annotated_max_width
+            )
+            downscale = (work_width, work_height) != (width, height)
+
             annotated_path = settings.processed_root / _render_name(filename, job_id)
             writer: AnnotatedVideoWriter | None = None
             if settings.annotated_video_enabled:
+                # The writer is handed the working size, so it never resizes
+                # again; the note it would have recorded is kept in the output.
                 writer = AnnotatedVideoWriter(
-                    annotated_path, source_fps, (width, height)
+                    annotated_path, source_fps, (work_width, work_height)
                 )
+                if width > settings.annotated_max_width:
+                    writer.warnings.append(
+                        f"Rendered at {work_width}x{work_height} rather than the "
+                        f"source {width}x{height} "
+                        f"(ANNOTATED_MAX_WIDTH={settings.annotated_max_width})"
+                    )
                 try:
                     writer.open()
                 except VideoWriteError as exc:
@@ -314,6 +390,12 @@ class VideoJobRunner:
                 if not ok or frame is None:
                     break
                 frame_index += 1
+                if downscale:
+                    # The full-size decode is dropped as soon as this returns;
+                    # nothing below ever sees it.
+                    frame = cv2.resize(
+                        frame, (work_width, work_height), interpolation=cv2.INTER_AREA
+                    )
 
                 # Virtual clock from the source timeline, so time-based rules
                 # (loitering, fall persistence) measure *video* seconds — not
@@ -352,8 +434,8 @@ class VideoJobRunner:
                         frame_index=frame_index,
                         timestamp=video_time,
                         wall_time=time.time(),
-                        frame_width=width,
-                        frame_height=height,
+                        frame_width=work_width,
+                        frame_height=work_height,
                         tracks=tracks,
                         zones=zones,
                         ppe=ppe_results,
@@ -467,6 +549,38 @@ class VideoJobRunner:
                         if total_frames and rate > 0
                         else None
                     )
+                    rss = _process_rss_mb()
+                    logger.info(
+                        "Job %s: %.1f%% frame %d/%d, %.1f fps, rss %s MB",
+                        job_id[:8], progress * 100, frame_index, total_frames, rate,
+                        f"{rss:.0f}" if rss is not None else "n/a",
+                    )
+                    # Watchdog. Failing one job here, with a reason in the
+                    # record, beats the host killing the whole process with
+                    # nothing in the log and no job left to show for it.
+                    limit_mb = settings.job_max_rss_mb
+                    if limit_mb and rss is not None and rss > limit_mb:
+                        if writer is not None:
+                            writer.abort()
+                        self._fail(
+                            job_id,
+                            f"Stopped at {progress * 100:.0f}%: memory use "
+                            f"({rss:.0f} MB) approached the host's limit "
+                            f"(JOB_MAX_RSS_MB={limit_mb}). Try a shorter or "
+                            f"lower-resolution video.",
+                        )
+                        return
+                    limit_s = settings.job_max_seconds
+                    if limit_s and spent > limit_s:
+                        if writer is not None:
+                            writer.abort()
+                        self._fail(
+                            job_id,
+                            f"Stopped at {progress * 100:.0f}%: analysis exceeded "
+                            f"the {limit_s:.0f}s limit (JOB_MAX_SECONDS) at "
+                            f"{rate:.1f} fps. Try a shorter video.",
+                        )
+                        return
                     self._update(
                         job_id, progress=round(progress, 4), processed_frames=processed,
                         events_created=events_created,

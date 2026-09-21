@@ -1,12 +1,16 @@
 """Health and diagnostics endpoints.
 
-`/api/health` is deliberately cheap — a load balancer can poll it. It reports
-`degraded` (still HTTP 200) when the platform is running but not fully
-functional, e.g. on synthetic detections or with no camera online.
+`/api/health` is deliberately cheap — a load balancer polls it, and on a
+fractional-CPU host it is polled *while* an analysis job is saturating the
+process. It therefore touches nothing that can wait: no database query, no
+lock the pipeline holds, only in-memory state. It reports `degraded` (still
+HTTP 200) when the platform is running but not fully functional, e.g. on
+synthetic detections or with the database uninitialised.
 
 `/api/diagnostics` is the honest, detailed picture required by §24: which
-inference backend is *actually* active, why every other one is not, and
-whether the Mojo kernels are genuinely in use.
+inference backend is *actually* active, why every other one is not, whether
+the Mojo kernels are genuinely in use — and the database row counts that the
+health endpoint no longer computes.
 """
 
 from __future__ import annotations
@@ -18,6 +22,7 @@ from sqlalchemy import select, text
 
 from backend.api.deps import DbSession, Manager, uptime_seconds
 from backend.config import settings
+from backend.db.base import db_ready
 from backend.db.models import Camera
 from backend.events.bus import get_bus
 from backend.events.engine import get_event_engine
@@ -37,21 +42,18 @@ router = APIRouter(tags=["system"])
 
 
 @router.get("/health", response_model=HealthOut, summary="Liveness and readiness")
-def health(session: DbSession, manager: Manager) -> HealthOut:
-    database_ok = True
-    try:
-        session.execute(text("SELECT 1"))
-    except Exception:
-        database_ok = False
+def health(manager: Manager) -> HealthOut:
+    """Constant-time liveness probe.
 
-    total = online = 0
-    if database_ok:
-        try:
-            cameras = session.execute(select(Camera)).scalars().all()
-            total = len(cameras)
-            online = sum(1 for c in cameras if c.status == "online")
-        except Exception:
-            database_ok = False
+    `database` is whether the schema initialised at startup, not the result
+    of a query: a probe that waits on SQLite behind a busy writer is a probe
+    that times out under load and gets the process restarted. `cameras_total`
+    counts registered pipelines, which is what "online" is measured against.
+    Row counts live in `/api/diagnostics`.
+    """
+    database_ok = db_ready()
+    pipelines = manager.all()
+    online = sum(1 for p in pipelines.values() if p.status == "online")
 
     detector = get_detector()
     backend = active_backend_name()
@@ -67,8 +69,8 @@ def health(session: DbSession, manager: Manager) -> HealthOut:
         database=database_ok,
         inference_backend=backend,
         model_loaded=bool(detector and detector.is_loaded),
-        cameras_online=max(online, manager.online_count),
-        cameras_total=total,
+        cameras_online=online,
+        cameras_total=len(pipelines),
         timestamp=datetime.now(UTC),
     )
 

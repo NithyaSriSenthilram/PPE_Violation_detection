@@ -87,6 +87,19 @@ class Settings(BaseSettings):
     #: 170 MB of transient frame and inference buffers, so on a 512 MB host
     #: this must be 1; a second job queues behind the first instead.
     max_concurrent_jobs: int = Field(2, ge=1, le=16)
+    #: Per-job memory watchdog. When the process RSS (read from
+    #: /proc/self/statm at each progress tick) exceeds this many MB the job is
+    #: failed cleanly with a message that says why, instead of the whole
+    #: process being SIGKILLed by the host with nothing in the logs. 0 disables
+    #: it, which is the right default on an uncapped machine: set it a little
+    #: under the host's limit on a capped one (Render Free, 512 MB: 470).
+    job_max_rss_mb: int = Field(0, ge=0)
+    #: Per-job wall-clock limit in seconds; 0 disables it. Two hours is far
+    #: beyond any normal clip on a workstation (a 10-minute 1080p upload takes
+    #: minutes) and only bites a job that has stalled or is crawling on a
+    #: throttled host, where it would otherwise hold the single job slot for
+    #: the rest of the day.
+    job_max_seconds: float = Field(7200.0, ge=0.0)
 
     # ── PPE ──────────────────────────────────────────────────────────────
     #: PPE detection runs its own threshold: the PPE model is a different

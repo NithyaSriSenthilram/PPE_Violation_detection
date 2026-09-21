@@ -92,13 +92,25 @@ engine: Engine = _build_engine(settings.resolved_database_url)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False, future=True)
 
 
+#: Set once :func:`init_db` has succeeded. The health endpoint reports this
+#: rather than running a query, so a probe never waits on the database.
+_ready = False
+
+
+def db_ready() -> bool:
+    """Whether the schema was initialised in this process."""
+    return _ready
+
+
 def init_db() -> None:
     """Create tables and seed defaults. Safe to call repeatedly."""
+    global _ready
     from backend.db import models  # noqa: F401  (registers mappers)
 
     settings.ensure_directories()
     Base.metadata.create_all(bind=engine)
     add_missing_columns()
+    _ready = True
     logger.info(
         "Database ready: %s",
         settings.resolved_database_url.split("://", 1)[0],

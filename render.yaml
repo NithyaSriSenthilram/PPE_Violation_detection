@@ -67,8 +67,19 @@ services:
       # transient buffers and exceed the instance. Further uploads queue.
       - key: MAX_CONCURRENT_JOBS
         value: "1"
+      # Frames are scaled to this width straight after decode, so detection,
+      # annotation and the render all work on the smaller frame: a 1080p or
+      # 4K upload then costs the same memory as a 1280-wide one.
       - key: ANNOTATED_MAX_WIDTH
         value: "1280"
+      # Watchdog: a job whose RSS passes this is failed with a clear message
+      # instead of the whole instance being killed at 512 MB with nothing in
+      # the log. JOB_MAX_SECONDS bounds a job that is crawling on the shared
+      # CPU so it cannot hold the single job slot indefinitely.
+      - key: JOB_MAX_RSS_MB
+        value: "470"
+      - key: JOB_MAX_SECONDS
+        value: "7200"
       # Large uploads are slow to analyse on a shared CPU and the container
       # has no disk to spare; raise this on a paid instance.
       - key: MAX_UPLOAD_MB

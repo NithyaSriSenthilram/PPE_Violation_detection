@@ -496,3 +496,185 @@ class TestBrowserPlayback:
         capture.release()
         assert ok and frame is not None
         assert abs(landed - (target + 1)) <= 2
+
+
+# ══════════════════════════════════════════════════════════════════════════
+#  Memory-capped hosts: working resolution and the watchdog
+# ══════════════════════════════════════════════════════════════════════════
+def _write_clip(path: Path, width: int, height: int, frames: int = 12) -> None:
+    """A short synthetic clip at an exact geometry."""
+    writer = cv2.VideoWriter(
+        str(path), cv2.VideoWriter_fourcc(*"mp4v"), 10.0, (width, height)
+    )
+    assert writer.isOpened()
+    rng = np.random.default_rng(7)
+    for _ in range(frames):
+        writer.write(rng.integers(0, 255, (height, width, 3), dtype=np.uint8))
+    writer.release()
+
+
+class _ShapeSpy:
+    """Wraps the real detector and records the frames it was handed."""
+
+    def __init__(self, detector) -> None:
+        self._detector = detector
+        self.shapes: list[tuple[int, int]] = []
+
+    def infer(self, frame):
+        self.shapes.append(frame.shape[:2])
+        return self._detector.infer(frame)
+
+    def __getattr__(self, name):
+        return getattr(self._detector, name)
+
+
+class TestRenderFreeSafeguards:
+    def test_working_size_scales_wide_sources_and_leaves_others_alone(self):
+        from backend.jobs.video_jobs import working_size
+
+        assert working_size(3840, 2160, 1280) == (1280, 720)
+        assert working_size(1920, 1080, 1280) == (1280, 720)
+        assert working_size(1280, 720, 1280) == (1280, 720)
+        assert working_size(640, 360, 1280) == (640, 360)
+        # Odd dimensions are made even, as H.264 requires; not scaled.
+        assert working_size(641, 481, 1280) == (640, 480)
+
+    def test_frames_are_downscaled_before_inference(self, tmp_path, monkeypatch):
+        """Detection sees the working frame, not the source frame.
+
+        The point of the cap is memory: a frame that reaches the detector at
+        source size has already cost the full-resolution copies the overlay
+        pass makes. So the check is on what `infer` receives, not on the file.
+        """
+        from backend.inference.registry import resolve_detector
+        from backend.jobs import video_jobs
+
+        source = tmp_path / "wide.mp4"
+        _write_clip(source, 1920, 1080)
+        spy = _ShapeSpy(resolve_detector())
+        monkeypatch.setattr(video_jobs, "resolve_detector", lambda: spy)
+        monkeypatch.setattr(settings, "annotated_max_width", 640)
+
+        job = run_job(source, profile="fast")
+
+        assert job.status == JobStatus.COMPLETED, job.message
+        assert spy.shapes and all(shape == (360, 640) for shape in spy.shapes)
+        assert job.output["resolution"] == "640x360"
+        assert job.resolution == "1920x1080"  # the source is still described
+        assert any("640x360" in w for w in job.output["warnings"])
+        info = source_properties(render_path(job))
+        assert (info["width"], info["height"]) == (640, 360)
+        assert info["frames"] == job.processed_frames
+
+    def test_small_sources_are_not_upscaled_or_touched(self, tmp_path, monkeypatch):
+        from backend.inference.registry import resolve_detector
+        from backend.jobs import video_jobs
+
+        source = tmp_path / "small.mp4"
+        _write_clip(source, 320, 240)
+        spy = _ShapeSpy(resolve_detector())
+        monkeypatch.setattr(video_jobs, "resolve_detector", lambda: spy)
+        monkeypatch.setattr(settings, "annotated_max_width", 1280)
+
+        job = run_job(source, profile="fast")
+
+        assert job.status == JobStatus.COMPLETED, job.message
+        assert all(shape == (240, 320) for shape in spy.shapes)
+        assert job.output["resolution"] == "320x240"
+        assert not any("rather than the source" in w for w in job.output["warnings"])
+
+    def test_the_rss_watchdog_fails_the_job_and_cleans_up(self, tmp_path, monkeypatch):
+        from backend.jobs import video_jobs
+
+        source = tmp_path / "clip.mp4"
+        _write_clip(source, 320, 240, frames=30)
+        monkeypatch.setattr(settings, "job_max_rss_mb", 470)
+        monkeypatch.setattr(video_jobs, "_process_rss_mb", lambda: 480.0)
+        before = set(settings.processed_root.glob("*"))
+
+        job = run_job(source, profile="fast")
+
+        assert job.status == JobStatus.FAILED
+        assert "memory" in job.message.lower()
+        assert "470" in job.message
+        assert job.finished_at is not None
+        assert job.annotated_path is None
+        # The partial render was removed and nothing else was left behind.
+        assert set(settings.processed_root.glob("*")) == before
+        # The upload is untouched, so the operator can retry elsewhere.
+        assert Path(job.stored_path).is_file()
+
+    def test_the_rss_watchdog_is_off_by_default(self, tmp_path, monkeypatch):
+        from backend.jobs import video_jobs
+
+        source = tmp_path / "clip.mp4"
+        _write_clip(source, 320, 240)
+        monkeypatch.setattr(settings, "job_max_rss_mb", 0)
+        monkeypatch.setattr(video_jobs, "_process_rss_mb", lambda: 9999.0)
+        job = run_job(source, profile="fast")
+        assert job.status == JobStatus.COMPLETED, job.message
+
+    def test_the_wall_clock_limit_fails_the_job_and_cleans_up(self, tmp_path, monkeypatch):
+        source = tmp_path / "clip.mp4"
+        _write_clip(source, 320, 240, frames=30)
+        # Small enough that the first progress tick is already past it.
+        monkeypatch.setattr(settings, "job_max_seconds", 1e-6)
+        before = set(settings.processed_root.glob("*"))
+
+        job = run_job(source, profile="fast")
+
+        assert job.status == JobStatus.FAILED
+        assert "JOB_MAX_SECONDS" in job.message
+        assert job.annotated_path is None
+        assert set(settings.processed_root.glob("*")) == before
+
+    def test_the_release_is_unaffected_by_a_watchdog_failure(self, tmp_path, monkeypatch):
+        """A failed job must not leave the decoder open on the upload.
+
+        `capture.release()` runs in the `finally`; if it did not, the upload
+        could not be deleted on Windows and would leak a decoder everywhere.
+        """
+        from backend.jobs import video_jobs
+
+        released: list[bool] = []
+
+        class _Capture:
+            """Delegates to a real capture (subclassing cv2 types is unsafe)."""
+
+            def __init__(self, *args) -> None:
+                self._capture = cv2.VideoCapture(*args)
+
+            def release(self) -> None:
+                released.append(True)
+                self._capture.release()
+
+            def __getattr__(self, name):
+                return getattr(self._capture, name)
+
+        class _Cv2:
+            VideoCapture = _Capture
+
+            def __getattr__(self, name):
+                return getattr(cv2, name)
+
+        monkeypatch.setattr(video_jobs, "cv2", _Cv2())
+        source = tmp_path / "clip.mp4"
+        _write_clip(source, 320, 240)
+        monkeypatch.setattr(settings, "job_max_rss_mb", 1)
+        monkeypatch.setattr(video_jobs, "_process_rss_mb", lambda: 2.0)
+
+        job = run_job(source, profile="fast")
+        assert job.status == JobStatus.FAILED
+        assert released == [True]
+
+    def test_rss_reader_never_raises(self):
+        """Returns a number on Linux and None elsewhere; never an exception."""
+        from backend.jobs.video_jobs import _process_rss_mb
+
+        value = _process_rss_mb()
+        assert value is None or value > 0
+
+    def test_lowering_thread_priority_is_safe_everywhere(self):
+        from backend.jobs.video_jobs import _lower_thread_priority
+
+        _lower_thread_priority()  # must not raise on any platform

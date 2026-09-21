@@ -21,6 +21,13 @@ ENV PYTHONUNBUFFERED=1 \
     # glibc grows one malloc arena per thread; the job pool, ORT and uvicorn
     # together can hold tens of MB of fragmented free space. Two is plenty.
     MALLOC_ARENA_MAX=2 \
+    # Pin the mmap threshold. By default glibc raises it every time a large
+    # block is freed, so after the first few frames every multi-MB frame and
+    # ORT scratch buffer comes off the brk heap, where freed space is never
+    # returned and RSS ramps for the length of a job. At a fixed 128 KB those
+    # buffers are mmapped and go straight back to the OS on free.
+    MALLOC_MMAP_THRESHOLD_=131072 \
+    MALLOC_TRIM_THRESHOLD_=131072 \
     PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1
 
@@ -91,6 +98,10 @@ ENV APP_ENV=production \
     ANNOTATED_FFMPEG_THREADS=1 \
     MAX_CONCURRENT_JOBS=1 \
     ANNOTATED_MAX_WIDTH=1280 \
+    # Fail a job cleanly (with a reason in its record) before the host
+    # SIGKILLs the process at 512 MB with nothing in the log.
+    JOB_MAX_RSS_MB=470 \
+    JOB_MAX_SECONDS=7200 \
     DATA_ROOT=/var/data
 
 # Ephemeral by default (no VOLUME): Render Free has no persistent disks.

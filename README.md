@@ -276,8 +276,10 @@ MOJO_ENABLED=off
 INFERENCE_THREADS=1        # free tier: one shared CPU
 ONNX_CPU_MEM_ARENA=false   # return scratch buffers between runs (512 MB cap)
 ANNOTATED_FFMPEG_THREADS=1 # ffmpeg finalise shares the 512 MB; 1 thread halves its peak
-ANNOTATED_MAX_WIDTH=1280   # render cap; 1080p renders push ffmpeg past the limit
+ANNOTATED_MAX_WIDTH=1280   # frames scaled to this width after decode; caps per-frame memory
 MAX_CONCURRENT_JOBS=1      # one analysis at a time; further uploads queue
+JOB_MAX_RSS_MB=470         # fail the job cleanly before the 512 MB kill
+JOB_MAX_SECONDS=7200       # wall-clock limit per job
 AUTO_START_CAMERAS=false
 MAX_UPLOAD_MB=200
 CORS_ORIGINS=              # prompted at Blueprint creation: the static site URL
@@ -704,9 +706,12 @@ Guaranteed properties, each covered by a test in `tests/test_video_output.py`:
 | Audio preserved | The source track is muxed back in with ffmpeg — `cv2.VideoWriter` has no audio concept |
 | Flat memory | Frames stream through one at a time; nothing accumulates |
 
-`ANNOTATED_MAX_WIDTH` (default 1920) caps the render so a 4K upload does not
-produce an unplayable multi-gigabyte file. Annotations are drawn at source
-scale and scaled with the frame, so they stay correctly positioned.
+`ANNOTATED_MAX_WIDTH` (default 1920) is the working width: a wider source is
+scaled down once, straight after decode, and detection, tracking, PPE,
+annotation and the render all run on that frame. A 4K upload therefore costs
+the same memory as a 1920-wide one and does not produce an unplayable
+multi-gigabyte file. Annotations are drawn on the working frame, so they stay
+correctly positioned.
 
 ### What the render draws
 
